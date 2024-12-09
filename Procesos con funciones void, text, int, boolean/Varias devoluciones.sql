@@ -11,7 +11,7 @@
 --Paso 4: Insercion de la devolucion
 --Paso 5: Inserción de detalles de devolución, actualización de inventario y ventas, y eliminación de registros procesados
 --Paso 6: Juntar los porcesos anteriores
-
+------------------------------------------------------------------------------------------------
 --Paso 1: Creacion de una tabla temporal con los datos esenciales y nesesarios para llevar a cavo una devolucion 
 CREATE TEMP TABLE devoluciones_lote (
     codigo_cliente INT,
@@ -29,10 +29,10 @@ VALUES
     (1, 1, 1, 2, 'bueno',1),
     (1, 1, 2, 1, 'dañado',2),
     (2, 2, 3, 3, 'bueno',3),
-	(4,28,2,1,'dañado',31)
+	(4,28,2,3,'dañado',31)
 	
 --select * from devoluciones_lote;
---select * from ventas_y_productos
+--select * from ventas_y_productos order by codigo desc;
 --drop table devoluciones_lote;
 
 --Paso 2: Verificacion de la existencia del cliente 
@@ -46,7 +46,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 -------------------------------
-select verificar_cliente(1);
+select verificar_cliente(7);--Inexistente
+select verificar_cliente(5);--Existente
+select * from devoluciones_lote;
+select * from ventas_y_productos;
 ------------------------------
 
 --Paso 3: Verificar que la venta exista, la cantidad devuelta no sea mayor que la comprada,verificar que el producto pertenesca ala venta y que xista el producto
@@ -110,7 +113,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -------------------------
-select procesar_devoluciones(5);
+select procesar_devoluciones(3);--Existente retorna void: nada
+select procesar_devoluciones(7);--Retorna que el cliente no tiene nada en la tabla temporal de la devolcion
 select * from ventas_y_productos;
 select * from devoluciones_lote;
 update ventas_y_productos
@@ -135,7 +139,7 @@ END;
 $$ LANGUAGE plpgsql;
 --------------------------------------------------
 select crear_devolucion(4);
-select * from devoluciones order by codigo desc;
+select * from devoluciones order by codigo desc;--Verificar el ultimo reguistro
 ---------------------------------------------------
 
 
@@ -151,36 +155,39 @@ DECLARE
     _precio_unitario NUMERIC;
     _cantidad_disponible INT;
 BEGIN
-    -- Iterar sobre cada registro relevante de la tabla temporal para el cliente
+    -- Verificar si el cliente tiene productos para devolver
+    IF NOT EXISTS (SELECT 1 FROM devoluciones_lote WHERE codigo_cliente = _codigo_cliente) THEN
+        RAISE EXCEPTION 'El cliente con código % no tiene productos para devolver.', _codigo_cliente;
+    END IF;
+
     FOR rec IN
         SELECT codigo_producto, estado_producto, cantidad_a_devolver AS total_a_devolver, codigo_vp
         FROM devoluciones_lote
         WHERE codigo_cliente = _codigo_cliente
     LOOP
-        -- Verificar si la cantidad total a devolver es válida
+        -- Verificar cantidad válida
         IF rec.total_a_devolver <= 0 THEN
-            RAISE EXCEPTION 'No hay cantidad válida para devolver para el producto % del cliente %.',
-                            rec.codigo_producto, _codigo_cliente;
+            RAISE EXCEPTION 'Cantidad inválida para devolver: %', rec.codigo_producto;
         END IF;
 
-        -- Verificar si la venta tiene cantidad suficiente en ventas_y_productos
+        -- Bloquear y verificar cantidad en ventas_y_productos
         SELECT cantidad INTO _cantidad_disponible
+        FROM ventas_y_productos
+        WHERE codigo_producto = rec.codigo_producto AND codigo = rec.codigo_vp
+        FOR UPDATE;
+
+        IF rec.total_a_devolver > _cantidad_disponible THEN
+            RAISE EXCEPTION 'Cantidad a devolver excede cantidad disponible: %', rec.codigo_producto;
+        END IF;
+
+        -- Obtener precio unitario
+        SELECT preciounitario INTO _precio_unitario
         FROM ventas_y_productos
         WHERE codigo_producto = rec.codigo_producto AND codigo = rec.codigo_vp;
 
-        IF rec.total_a_devolver > _cantidad_disponible THEN
-            RAISE EXCEPTION 'La cantidad a devolver (%), para el producto % excede la cantidad disponible en la venta (%).',
-                            rec.total_a_devolver, rec.codigo_producto, _cantidad_disponible;
-        END IF;
-
-        -- Obtener el precio unitario
-        SELECT precio_unitario INTO _precio_unitario
-        FROM productos
-        WHERE codigo = rec.codigo_producto;
-
-        -- Verificar el estado del producto y realizar las acciones correspondientes
+        -- Procesar según el estado del producto
         IF rec.estado_producto = 'bueno' THEN
-            -- Insertar en productosdevueltos si está en buen estado
+            -- Insertar y sumar al inventario
             INSERT INTO productosdevueltos (
                 codigo_devolucion, codigo_vp, observaciones, cantidad, subtotal, unit_price
             )
@@ -192,17 +199,11 @@ BEGIN
                 rec.total_a_devolver * _precio_unitario,
                 _precio_unitario
             );
-            -- Sumar la cantidad devuelta a la tabla productos
             UPDATE productos
             SET stack_disponible = stack_disponible + rec.total_a_devolver
             WHERE codigo = rec.codigo_producto;
-
-			-- Actualizar ventas_y_productos, restando la cantidad procesada
-	        UPDATE ventas_y_productos
-	        SET cantidad = cantidad - rec.total_a_devolver
-	        WHERE codigo_producto = rec.codigo_producto AND codigo = rec.codigo_vp;
-	        ELSIF rec.estado_producto = 'dañado' THEN
-            -- Insertar en productosdevueltos aunque esté en mal estado
+        ELSIF rec.estado_producto = 'dañado' THEN
+            -- Insertar sin sumar al inventario
             INSERT INTO productosdevueltos (
                 codigo_devolucion, codigo_vp, observaciones, cantidad, subtotal, unit_price
             )
@@ -216,12 +217,14 @@ BEGIN
             );
         END IF;
 
-        -- Actualizar ventas_y_productos, restando la cantidad procesada
+        -- Actualizar ventas_y_productos
         UPDATE ventas_y_productos
-        SET cantidad = cantidad - rec.total_a_devolver
+        SET 
+            cantidad = cantidad - rec.total_a_devolver,
+            subtotal = (cantidad - rec.total_a_devolver) * preciounitario
         WHERE codigo_producto = rec.codigo_producto AND codigo = rec.codigo_vp;
 
-        -- Eliminar el registro procesado en la tabla temporal
+        -- Eliminar registro procesado
         DELETE FROM devoluciones_lote
         WHERE codigo_cliente = _codigo_cliente
           AND codigo_producto = rec.codigo_producto
@@ -229,16 +232,15 @@ BEGIN
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
-
-
-
+---------------------------------------------------
 --codigo venta,codigo devolucion, codigo cliente
-select insertar_detalle_devolucion(28,1,4);
-select * from ventas;
-select * from productosdevueltos;
-select * from ventas_y_productos;
-select * from devoluciones_lote;
-select * from productos;
+select insertar_detalle_devolucion(1,11,1);
+select * from ventas order by codigo desc;--40
+select * from devoluciones order by codigo desc; --39
+select * from productosdevueltos order by codigo desc;--104--110--112
+select * from ventas_y_productos order by codigo desc;--41--46
+select * from devoluciones_lote;--codigo vp 1,2
+select * from productos order by codigo;--
 ----------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION procesar_devolucion_completa(
@@ -266,24 +268,60 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 -----------------------------------------------------------------------
-SELECT procesar_devolucion_completa(1);
+SELECT procesar_devolucion_completa(2);
 select * from ventas;
-select * from productosdevueltos;
-select * from ventas_y_productos;
-select * from devoluciones_lote;
-select * from productos;
+select * from devoluciones;
+select * from productosdevueltos;--112
+select * from ventas_y_productos;--49
+select * from devoluciones_lote;--28--2--3 =  8
+select * from productos;--106   --218
 
 update ventas_y_productos
 set cantidad = cantidad + 20
-where codigo = 3;
+where codigo = 31;
 -----------------------------------------------------------------------
 -- Llamar a la función para insertar o actualizar registros
-SELECT insertar_o_actualizar_devolucion(5, 1, 10, 3, 'bueno', 1);
-SELECT insertar_o_actualizar_devolucion(1, 1, 2, 1, 'dañado', 2);
-SELECT insertar_o_actualizar_devolucion(2, 3, 2, 3, 'bueno', 3);
-SELECT insertar_o_actualizar_devolucion(4, 28, 2, 1, 'dañado', 31);
+--  codigo_cliente, codigo_venta, codigo_producto, cantidad_a_devolver, estado_producto,codigo_vp
+SELECT insertar_o_actualizar_devolucion(5, 100, 3, 3, 'bueno', 1);--Venta no existente
+SELECT insertar_o_actualizar_devolucion(2, 5, 2, 1, 'dañado', 2);--Diferente el codigo
+SELECT insertar_o_actualizar_devolucion(3, 5, 9, 1, 'dañado', 2);--Producto No existente
 select * from ventas_y_productos;
 -----------------------------------------
+
+/*
+CREATE TEMP TABLE devoluciones_lote (
+    codigo_cliente INT,
+    codigo_venta INT,
+    codigo_producto INT,
+    cantidad_a_devolver INT,
+    estado_producto VARCHAR,
+	codigo_vp INT
+);
+--Insertar detalles 
+INSERT INTO devoluciones_lote (
+    codigo_cliente, codigo_venta, codigo_producto, cantidad_a_devolver, estado_producto,codigo_vp
+)
+VALUES
+    (1, 1, 1, 2, 'bueno',1),
+    (1, 1, 2, 1, 'dañado',2),
+    (2, 2, 3, 3, 'bueno',3),
+	(4,28,2,3,'dañado',31)
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

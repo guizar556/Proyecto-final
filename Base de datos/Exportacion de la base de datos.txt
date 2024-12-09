@@ -1,0 +1,20 @@
+Para exportar el documento correctamente, sigue estos pasos y ten en cuenta los siguientes detalles:
+
+Verificar la versión de PostgreSQL:
+
+Ejecuta la siguiente consulta para conocer la versión de PostgreSQL:
+sql
+Copiar código
+SELECT version();
+
+Encontrar la ruta del directorio binario de PostgreSQL:
+
+Abre el Explorador de archivos y navega a C:\Archivos de programa\.
+Busca la carpeta PostgreSQL (la versión que estés utilizando, ya sea 16 o 17).
+Accede a la carpeta de la versión correspondiente (por ejemplo, PostgreSQL 17 o PostgreSQL 16).
+Entra en la subcarpeta bin y copia la ruta completa de esa carpeta.
+Configurar la ruta del directorio binario en PostgreSQL:
+
+Vuelve a PostgreSQL y, en el menú, selecciona File > Path > Path Binary.
+Pega la ruta copiada en ambos campos correspondientes de la versión que uses.
+Marca las casillas de verificación para cada sección y guarda los cambios.

@@ -4,7 +4,7 @@
 --Tema: Funcriones y procesos combinados en transacciones.
 --------------------------------------------------
 --1.- Generacion de una orden. 
-----------------------------------
+-------------------------------------------------------------------------------------
 --Pasos a seguir para este proceso.
 --Paso 1:Verificación de la existencia del cliente y el empleado.
 --Paso 2:Inserción del pedido en la tabla de órdenes.
@@ -32,9 +32,13 @@ BEGIN
     RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql;
-
+----------------------------------------
 --Datos de tipo entero 
-select verificar_cliente_empleado(3,2);
+select verificar_cliente_empleado(6,6);--Inexistente cliente empleado
+select verificar_cliente_empleado(1,6);--Inexistente Empleado
+select verificar_cliente_empleado(6,1);--Inexistente cliente 
+select verificar_cliente_empleado(1,1);--Existente 
+----------------------------------------
 
 
 --Generacion del pedido
@@ -64,8 +68,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 ----------------------------------------------------
-select generacion_del_pedido(2,5,'112 kg de crema');
-select * from pedidios;
+select generacion_del_pedido(2,5,'112 kg de crema');--Orden
+--select * from pedidios order by codigo desc;
 -----------------------------------------------------
 
 --Paso 3:Creación y manejo de una tabla temporal para detalles del pedido con los datos nesesarios.
@@ -98,13 +102,21 @@ DECLARE
     _precio_unitario NUMERIC;
     _subtotal NUMERIC;
     _discount NUMERIC := 0.0;
-    _stock_disponible INT;
 BEGIN
+    -- Verificar si el cliente tiene productos en la tabla temporal `carrito`
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM carrito 
+        WHERE codigo_c = codigo_cliente
+    ) THEN
+        RAISE EXCEPTION 'El cliente % no tiene productos en el carrito.', codigo_cliente;
+    END IF;
+
     -- Iterar sobre los productos en el carrito para un cliente específico
     FOR _codigo_c, _cantidad, _codigo_pr IN
         SELECT codigo_c, cantidad, codigo_pr
         FROM carrito
-        WHERE codigo_c = codigo_cliente  -- Filtrar solo los productos para el cliente específico
+        WHERE codigo_c = codigo_cliente
     LOOP
         -- Verificar si el producto existe en la tabla productos
         IF NOT EXISTS (SELECT 1 FROM productos WHERE codigo = _codigo_pr) THEN
@@ -133,9 +145,12 @@ BEGIN
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
 ------------------------------------------------------------------------
-select insercion_dt(10,1)
-select * from pedidos_y_productos order by codigo desc;
+--codigo de pedido, cliente
+select insercion_dt(10,3);
+select * from pedidos_y_productos order by codigo desc;--63--64--65
+select * from carrito;
 ------------------------------------------------------------------------
 -- Generar la venta
 CREATE OR REPLACE FUNCTION generar_venta(
@@ -172,9 +187,9 @@ END;
 $$ LANGUAGE plpgsql;
 -----------------------------------------------------------------------------
 -- Prueba de la función
-SELECT generar_venta( 'Efectivo', 20, 'Venta de productos lácteos');
-SELECT * FROM ventas;
-
+SELECT generar_venta( 'efectivo', 20, 'Venta de productos lácteos');--Venta
+SELECT * FROM ventas order by codigo desc;
+--------------------------------------------------------------------
 -- Insertar detalles de venta y modificar inventario
 CREATE OR REPLACE FUNCTION insertar_detalles_venta(
     codigo_venta NUMERIC,
@@ -190,6 +205,11 @@ DECLARE
     _discount NUMERIC := 0.0; 
     _stock_disponible INT;
 BEGIN
+    -- Verificar si el cliente tiene productos en el carrito
+    IF NOT EXISTS (SELECT 1 FROM carrito WHERE codigo_c = codigo_cliente) THEN
+        RAISE EXCEPTION 'El cliente con código % no tiene productos en el carrito.', codigo_cliente;
+    END IF;
+
     -- Iterar sobre los productos en el carrito del cliente
     FOR _codigo_c, _cantidad, _codigo_pr IN
         SELECT codigo_c, cantidad, codigo_pr
@@ -230,16 +250,20 @@ BEGIN
         SET stack_disponible = stack_disponible - _cantidad
         WHERE codigo = _codigo_pr;
     END LOOP;
-	-- Eliminar los registros del carrito para el cliente
-	DELETE FROM carrito
+
+    -- Eliminar los registros del carrito para el cliente
+    DELETE FROM carrito
     WHERE codigo_c = codigo_cliente;
+
 END;
 $$ LANGUAGE plpgsql;
+
 ------------------------------------
--- Prueba de la función
-SELECT insertar_detalles_venta(9, 1);
-SELECT * FROM ventas_y_productos;
+-- Prueba de la función  codigo de venta, cliente
+SELECT insertar_detalles_venta(9, 2);
+SELECT * FROM ventas_y_productos order by codigo desc;--43
 SELECT * FROM productos;
+-- cliente,cantidad,producto
 select * from carrito;
 -------------------------------------
 -- Función combinada para procesar un pedido, desde la verificación hasta la venta.
@@ -274,14 +298,54 @@ BEGIN
     RAISE NOTICE 'Pedido % procesado correctamente.', _order_id;
 END;
 $$ LANGUAGE plpgsql;
-
+------------------------------------------------------------------------------
 --cliente,empleado,descripccion pedido,tipo pago,descripccion de la venta
-select procesar_pedido_completo(5,2,'Buenoooooo','Tarjeton','VEnta rapida');
-select * from pedidios;--33
+select procesar_pedido_completo(2,2,'Mas omenos','Tarjeton','VEnta rapida');
+select * from pedidios order by codigo desc;--33
 select * from pedidos_y_productos;--34
 select * from ventas;--27
 select * from ventas_y_productos;--29
 select * from carrito;
+-------------------------------------------------------------------------------
+--Drop table carrito;
+INSERT INTO carrito (codigo_c, cantidad, codigo_pr) VALUES
+(1, 9, 8),  --Producto Inexistente
+(2, 400, 2) -- Cantidad Insuficiente  
+
+/* 
+--select insertar_carrito();
+Reguistros validos
+CREATE TABLE carrito(
+	codigo serial,
+	codigo_c int,
+	cantidad int,
+	codigo_pr int
+)
+
+INSERT INTO carrito (codigo_c, cantidad, codigo_pr) VALUES
+(1, 2, 1),  -- Cliente 1, 2 unidades del producto 1
+(2, 3, 2),  -- Cliente 2, 3 unidades del producto 2
+(3, 1, 3),  -- Cliente 3, 1 unidad del producto 3
+(4, 4, 4),  -- Cliente 4, 4 unidades del producto 4
+(5, 5, 5),  -- Cliente 5, 5 unidades del producto 5
+(1, 2, 2),  -- Cliente 1, 2 unidades del producto 2
+(2, 1, 4);  -- Cliente 2, 1 unidad del producto 4
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 --modificar reguistro
 UPDATE carrito
@@ -295,7 +359,7 @@ WHERE codigo = 3;
 */
 
 --cliente,producto,cantidad
-select insertar_o_actualizar_carrito(5,5,300);
+select insertar_o_actualizar_carrito(5,7,300);
 select * from carrito;
 drop table carrito;
 
