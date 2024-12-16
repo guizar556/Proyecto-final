@@ -148,7 +148,7 @@ $$ LANGUAGE plpgsql;
 
 ------------------------------------------------------------------------
 --codigo de pedido, cliente
-select insercion_dt(10,3);
+select insercion_dt(10,4);
 select * from pedidos_y_productos order by codigo desc;--63--64--65
 select * from carrito;
 ------------------------------------------------------------------------
@@ -260,8 +260,8 @@ $$ LANGUAGE plpgsql;
 
 ------------------------------------
 -- Prueba de la función  codigo de venta, cliente
-SELECT insertar_detalles_venta(9, 2);
-SELECT * FROM ventas_y_productos order by codigo desc;--43
+SELECT insertar_detalles_venta(9, 4);
+SELECT * FROM ventas_y_productos order by codigo desc;--47
 SELECT * FROM productos;
 -- cliente,cantidad,producto
 select * from carrito;
@@ -294,18 +294,19 @@ BEGIN
     -- Paso 5: Insertar detalles de la venta y modificar inventario
     PERFORM insertar_detalles_venta(_codigo_venta, codigo_c);
 
-    -- Confirmación del proceso (no es necesario hacer un COMMIT aquí)
+    -- Confirmación del proceso 
     RAISE NOTICE 'Pedido % procesado correctamente.', _order_id;
 END;
 $$ LANGUAGE plpgsql;
 ------------------------------------------------------------------------------
 --cliente,empleado,descripccion pedido,tipo pago,descripccion de la venta
 select procesar_pedido_completo(2,2,'Mas omenos','Tarjeton','VEnta rapida');
-select * from pedidios order by codigo desc;--33
-select * from pedidos_y_productos;--34
+select * from pedidios order by codigo desc;--33 --47
+select * from pedidos_y_productos;--34 --70
 select * from ventas;--27
-select * from ventas_y_productos;--29
+select * from ventas_y_productos;--29  -47
 select * from carrito;
+select * from productos;
 -------------------------------------------------------------------------------
 --Drop table carrito;
 INSERT INTO carrito (codigo_c, cantidad, codigo_pr) VALUES

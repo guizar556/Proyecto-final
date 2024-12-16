@@ -113,11 +113,12 @@ END;
 $$ LANGUAGE plpgsql;
 
 -------------------------
-select procesar_devoluciones(3);--Existente retorna void: nada
+
+select procesar_devoluciones(2);
 select procesar_devoluciones(7);--Retorna que el cliente no tiene nada en la tabla temporal de la devolcion
 select * from ventas_y_productos;
 select * from devoluciones_lote;
-update ventas_y_productos
+update ventas_y_productos;
 set cantidad = cantidad + 20
 where codigo = 31;
 -------------------------
@@ -146,7 +147,6 @@ select * from devoluciones order by codigo desc;--Verificar el ultimo reguistro
 --Paso 5: Insercion de los detalles de devolucion y modificacion en el inventario y la venta 
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION insertar_detalle_devolucion(
-    _codigo_venta INT,
     _codigo_devolucion INT,
     _codigo_cliente INT
 ) RETURNS VOID AS $$
@@ -234,13 +234,16 @@ END;
 $$ LANGUAGE plpgsql;
 ---------------------------------------------------
 --codigo venta,codigo devolucion, codigo cliente
-select insertar_detalle_devolucion(1,11,1);
-select * from ventas order by codigo desc;--40
-select * from devoluciones order by codigo desc; --39
-select * from productosdevueltos order by codigo desc;--104--110--112
-select * from ventas_y_productos order by codigo desc;--41--46
-select * from devoluciones_lote;--codigo vp 1,2
-select * from productos order by codigo;--
+select insertar_detalle_devolucion(1,11,2);   --2 bueno 1    1 dañado  2
+select * from ventas order by codigo desc;--42
+select * from devoluciones order by codigo desc; --44
+select * from productosdevueltos order by codigo desc;--122
+select * from ventas_y_productos order by codigo desc;--50        
+select * from devoluciones_lote;--codigo vp 1,2    --6  --30
+select * from productos order by codigo;-- 72   134
+update ventas_y_productos 
+set cantidad = cantidad +30
+where codigo = 3;
 ----------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION procesar_devolucion_completa(
@@ -261,7 +264,7 @@ BEGIN
     _codigo_devolucion := crear_devolucion(_codigo_cliente);
 
     -- Paso 4: Insertar los detalles de la devolución
-    PERFORM insertar_detalle_devolucion(_codigo_cliente, _codigo_devolucion, _codigo_cliente);
+    PERFORM insertar_detalle_devolucion( _codigo_devolucion, _codigo_cliente);
 
     -- Finalizar con éxito
     RAISE NOTICE 'Devolución completada correctamente para el cliente %.', _codigo_cliente;
@@ -270,11 +273,11 @@ $$ LANGUAGE plpgsql;
 -----------------------------------------------------------------------
 SELECT procesar_devolucion_completa(2);
 select * from ventas;
-select * from devoluciones;
-select * from productosdevueltos;--112
+select * from devoluciones; --45
+select * from productosdevueltos order by codigo_devolucion desc;--123
 select * from ventas_y_productos;--49
-select * from devoluciones_lote;--28--2--3 =  8
-select * from productos;--106   --218
+select * from devoluciones_lote; --codigo v 2 codigo p 2 cantidad 3 bueno  codigo vp 3
+select * from productos; --137
 
 update ventas_y_productos
 set cantidad = cantidad + 20
@@ -282,9 +285,9 @@ where codigo = 31;
 -----------------------------------------------------------------------
 -- Llamar a la función para insertar o actualizar registros
 --  codigo_cliente, codigo_venta, codigo_producto, cantidad_a_devolver, estado_producto,codigo_vp
-SELECT insertar_o_actualizar_devolucion(5, 100, 3, 3, 'bueno', 1);--Venta no existente
-SELECT insertar_o_actualizar_devolucion(2, 5, 2, 1, 'dañado', 2);--Diferente el codigo
-SELECT insertar_o_actualizar_devolucion(3, 5, 9, 1, 'dañado', 2);--Producto No existente
+SELECT insertar_o_actualizar_devolucion(3, 100, 3, 3, 'bueno', 1);--Venta no existente
+SELECT insertar_o_actualizar_devolucion(5, 5, 2, 1, 'dañado', 2);--Diferente el codigo
+SELECT insertar_o_actualizar_devolucion(1, 5, 9, 1, 'dañado', 2);--Producto No existente
 select * from ventas_y_productos;
 -----------------------------------------
 
